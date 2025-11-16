@@ -1,0 +1,1694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ember Arena 7.0: Level Progression Update</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <style>
+        /* Custom CSS for Neon Cyber Aesthetics */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Orbitron:wght@400;700;900&display=swap');
+:root {
+            --player-color: #00e5ff; /* Cyan Neon */
+            --ai-color: #ff1493; /* Deep Pink Neon */
+            --elixir-color: #a855f7; /* Purple Glow */
+            --font-main: 'Inter', sans-serif;
+            --font-title: 'Orbitron', sans-serif;
+            --font-stats: 'Orbitron', sans-serif;
+        }
+
+        body {
+            background-color: #000000;
+            color: #ffffff;
+            font-family: var(--font-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        
+        /* New, refined glow text style */
+        .glow-text {
+            color: #d1d5db; /* Light gray base color */
+            text-shadow: 0 0 5px #00eaff, /* Cyan glow */
+                         0 0 10px #00eaff,
+                         0 0 20px #00eaff;
+        }
+
+        @keyframes subtlePulse {
+            0%, 100% { box-shadow: 0 0 40px rgba(0, 229, 255, 0.4); border-color: rgba(0, 229, 255, 1); }
+            50% { box-shadow: 0 0 60px rgba(0, 229, 255, 0.7); border-color: rgba(0, 229, 255, 0.8); }
+        }
+
+        /* MOBILE FIX: Ensure game container respects aspect ratio on all screens */
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            /* Constrain container to the 900x600 canvas aspect ratio for best fit */
+            max-width: min(100vw, calc(100vh * 9 / 6));
+            max-height: min(100vh, calc(100vw * 6 / 9));
+        }
+
+        #game-canvas {
+            border-radius: 1.5rem;
+            background-color: #05050e; 
+            touch-action: none;
+            cursor: crosshair;
+            border: 6px solid var(--player-color); 
+            animation: subtlePulse 2s infinite alternate;
+            /* Enhanced cyber pattern */
+            background-image: repeating-linear-gradient(0deg, #111 0%, #111 2px, transparent 2px, transparent 20px), repeating-linear-gradient(90deg, #111 0%, #111 2px, transparent 2px, transparent 20px);
+            background-size: 20px 20px;
+            
+            /* MOBILE FIX: Make sure canvas fits the constrained container */
+            max-width: 100%;
+            max-height: 100%;
+            aspect-ratio: 9 / 6;
+            display: block;
+        }
+
+        /* UI Bar: Aggressive, Segmented Control Panel */
+        #ui-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 1.5rem 1rem 1rem 1rem;
+            
+            background: rgba(17, 25, 40, 0.95);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            clip-path: polygon(0% 15%, 5% 0%, 95% 0%, 100% 15%, 100% 100%, 0% 100%);
+            border-top: 5px solid var(--player-color);
+            border-left: 5px solid rgba(0, 229, 255, 0.4);
+            border-right: 5px solid rgba(0, 229, 255, 0.4);
+            box-shadow: 0 0 70px rgba(0, 229, 255, 0.4), 0 -10px 40px var(--player-color);
+            z-index: 10;
+        }
+
+        /* Card Slot Styles */
+        .card-slot {
+            width: 100px;
+            height: 140px; 
+            border-radius: 1.25rem;
+            margin: 0 0.5rem;
+            background: linear-gradient(145deg, #2b313d, #14181f); 
+            border: 4px solid rgba(255, 255, 255, 0.15);
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94); 
+            position: relative;
+            overflow: hidden;
+            user-select: none;
+            box-shadow: inset 0 0 20px rgba(0, 229, 255, 0.05), 0 5px 25px rgba(0, 0, 0, 0.8);
+        }
+
+        .card-slot::before {
+            /* SHINE EFFECT */
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -150%;
+            width: 50%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+            transform: skewX(-20deg);
+            transition: transform 0.6s ease;
+        }
+        
+        .card-slot:hover:not(.unavailable) {
+            transform: translateY(-15px) scale(1.1);
+            border-color: var(--elixir-color);
+            box-shadow: 0 0 50px var(--elixir-color), 0 5px 30px rgba(0, 0, 0, 0.9);
+        }
+
+        .card-slot:hover:not(.unavailable)::before {
+            transform: translateX(350%) skewX(-20deg);
+        }
+
+        .card-slot.selected {
+            border-color: #fcd34d;
+            transform: scale(1.15);
+            box-shadow: 0 0 60px #fcd34d, 0 0 15px #fcd34d inset;
+        }
+
+        .card-slot.unavailable {
+            opacity: 0.3;
+            filter: grayscale(100%) brightness(50%);
+            cursor: not-allowed;
+            transform: scale(0.95);
+        }
+
+        .card-cost {
+            /* Aggressive Cost Tag Design */
+            position: absolute;
+            bottom: -5px;
+            right: -5px;
+            font-family: var(--font-stats);
+            font-weight: 900;
+            font-size: 2rem;
+            line-height: 1;
+            color: #ffffff;
+            background: var(--elixir-color);
+            padding: 5px 14px 2px 14px;
+            border-top-left-radius: 1rem;
+            clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 20% 100%, 0% 70%);
+            text-shadow: 0 0 15px #ffffff, 0 0 30px var(--elixir-color);
+            box-shadow: 0 0 20px var(--elixir-color);
+            border: 2px solid white;
+        }
+
+        .card-icon {
+            font-size: 4rem;
+            pointer-events: none;
+            /* Applying the glow to the icon for better aesthetics */
+            text-shadow: 0 0 10px #ffffff, 0 0 20px var(--player-color), 0 0 30px var(--player-color);
+            padding-top: 5px;
+        }
+
+        /* Stat Block on Card (More compact) */
+        .card-stats {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            font-family: var(--font-stats);
+            font-size: 0.65rem;
+            font-weight: 700;
+        }
+        .stat-item {
+            display: flex;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 1px 3px;
+            border-radius: 4px;
+            color: #fff;
+            box-shadow: 0 0 5px rgba(255, 255, 255, 0.3);
+        }
+        .stat-item span:first-child { margin-right: 3px; }
+        .stat-hp { color: #10b981; } 
+        .stat-dmg { color: #f87171; }
+        .stat-rng { color: #60a5fa; }
+        
+        /* Elixir Bar Style - Centralized Gauge */
+        .elixir-container {
+            width: 220px;
+            height: 70px;
+            background: #111827;
+            border-radius: 15px;
+            border: 5px solid var(--elixir-color);
+            box-shadow: 0 0 30px var(--elixir-color) inset, 0 0 25px var(--elixir-color);
+            position: relative;
+            overflow: hidden;
+        }
+        .elixir-bar-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        .elixir-bar {
+            height: 100%;
+            background-image: linear-gradient(to right, #9333ea, var(--elixir-color), #fcd34d);
+            transition: width 0.1s linear;
+            box-shadow: 0 0 15px #ffffff;
+        }
+        #elixir-count {
+            position: absolute;
+            top: 50%
+;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            font-size: 3rem;
+            font-weight: 900;
+            color: #ffffff;
+            text-shadow: 0 0 10px #fcd34d, 0 0 30px var(--elixir-color);
+            animation: flicker 1.2s infinite alternate;
+        }
+        @keyframes flicker {
+            0% { opacity: 1; text-shadow: 0 0 10px #fcd34d, 0 0 20px var(--elixir-color); }
+            50% { opacity: 0.9; text-shadow: 0 0 8px #fcd34d, 0 0 15px var(--elixir-color); }
+            100% { opacity: 1; text-shadow: 0 0 12px #fff, 0 0 35px var(--elixir-color); }
+        }
+
+        /* --- MOBILE SPECIFIC STYLES (New) --- */
+        @media (max-width: 600px) {
+            .card-slot {
+                width: 70px; /* Reduced size */
+                height: 100px;
+                margin: 0 0.25rem;
+                border-width: 3px;
+                border-radius: 0.75rem;
+            }
+            .card-icon {
+                font-size: 3rem;
+            }
+            .card-cost {
+                font-size: 1.5rem;
+                padding: 3px 8px 1px 8px;
+            }
+            .elixir-container {
+                width: 150px;
+                height: 50px;
+                border-width: 3px;
+            }
+            #elixir-count {
+                font-size: 2rem;
+            }
+            .score-container {
+                /* Container around the scores for better mobile fit */
+                padding: 0.75rem;
+                border-width: 3px;
+            }
+            #player-score, #ai-score {
+                font-size: 3rem;
+            }
+            #ui-bar {
+                padding: 1rem 0.5rem 0.5rem 0.5rem;
+            }
+        }
+    </style>
+</head>
+<body class="bg-black">
+
+    <div id="game-container">
+
+        <div id="main-menu" class="menu-screen absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#000000] bg-opacity-95">
+            <h1 class="text-7xl md:text-9xl mb-4 font-title text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500 tracking-[0.2em]" style="text-shadow: 0 0 40px rgba(0, 255, 255, 1);">EMBER ARENA</h1>
+            <h2 id="level-indicator-menu" class="text-3xl font-title text-white mb-12 tracking-wider" style="text-shadow: 0 0 20px rgba(255, 20, 147, 0.9);">LEVEL 1 // EASY</h2>
+   
+            <button id="start-button" class="px-16 py-6 bg-gradient-to-r from-red-600 to-pink-600 text-white text-3xl font-bold rounded-xl tracking-wider shadow-[0_0_60px_rgba(255,20,147,0.9)] hover:from-red-700 hover:to-pink-700 transition duration-300 transform hover:scale-105">
+                INITIATE COMBAT SEQUENCE
+            </button>
+            <p class="mt-10 text-lg font-main text-gray-400">Audio will begin upon sequence initiation.</p>
+        </div>
+        
+      
+        <div id="pause-overlay" class="menu-screen absolute inset-0 z-50 flex-col items-center justify-center bg-[#000000] bg-opacity-95 hidden">
+            <h1 class="text-7xl md:text-9xl mb-12 font-title text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-red-500 tracking-[0.2em]" style="text-shadow: 0 0 40px rgba(255, 255, 0, 1);">SYSTEM PAUSED</h1>
+            <button id="unpause-button" class="px-16 py-6 bg-gradient-to-r from-green-500 to-teal-500 text-white text-3xl font-bold rounded-xl tracking-wider shadow-[0_0_60px_rgba(0,255,0,0.9)] hover:from-green-600 hover:to-teal-600 transition duration-300 transform hover:scale-105">
+                RESUME COMBAT
+         
+            </button>
+        </div>
+
+
+        <canvas id="game-canvas"></canvas>
+
+        <div id="message-overlay" class="hidden">
+            <div class="message-box absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 p-10 rounded-2xl bg-gray-900 border-4 text-center shadow-[0_0_80px_rgba(0,255,255,1)] z-50">
+                <h2 id="message-title" class="text-6xl font-title mb-6 tracking-widest"></h2>
+                <button id="level-action-button" class="px-10 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white 
+text-2xl font-bold rounded-lg hover:from-purple-700 hover:to-pink-700 transition duration-200 shadow-2xl shadow-pink-500/80">
+                    </button>
+            </div>
+        </div>
+   
+        <div id="feedback-message" class="absolute top-[40%] text-3xl font-title text-red-500 bg-black bg-opacity-90 p-5 rounded-xl hidden transition-opacity duration-300 border-4 border-red-500" style="text-shadow: 0 0 20px #ff0000;">
+            INVALID DEPLOYMENT ZONE
+       
+        </div>
+
+        <div id="ui-bar" class="w-full flex items-center justify-between">
+      
+            <div class="score-container flex items-center ml-6 space-x-4 bg-gray-900 p-4 rounded-xl border-4 border-cyan-500 shadow-lg shadow-cyan-500/50">
+                <span id="player-score" class="text-6xl font-stats font-extrabold text-cyan-400 tracking-wider glow-text">0</span>
+                <span class="text-4xl font-stats text-gray-500">//</span>
+              
+                <span id="ai-score" class="text-6xl font-stats font-extrabold text-red-500 tracking-wider glow-text" style="--player-color: #ff1493;">0</span>
+            </div>
+
+            <div id="hand-container" class="flex justify-center flex-grow">
+                </div>
+
+       
+            <div class="flex items-center mr-6 space-x-10">
+                <div class="flex flex-col items-center">
+   
+                    <span class="text-sm text-gray-400 mb-1 font-main tracking-widest glow-text">LEVEL</span>
+                    <span id="current-level-display" class="text-4xl font-stats font-bold text-yellow-400" style="text-shadow: 0 0 15px #fcd34d;">1</span>
+                </div>
+
+                <div class="elixir-container">
+              
+                    <div id="elixir-bar-container" class="elixir-bar-container">
+                        <div id="elixir-bar" class="elixir-bar" style="width: 0%;"></div>
+                    </div>
+                    <span id="elixir-count" class="font-stats">0/10</span>
+                </div>
+
+      
+                    <div class="flex flex-col items-center">
+                    <span class="text-sm text-gray-400 mb-1 font-main tracking-widest glow-text">NEXT</span>
+                    <div id="next-card" class="card-slot w-[70px] h-[90px] bg-gray-700 flex items-center justify-center border-2 border-gray-600">
+                        <span class="card-icon text-4xl" style="text-shadow: none;">?</span>
+   
+                        <span class="card-cost text-xl right-[-3px] bottom-[-3px] px-3 py-0.5 rounded-tl-lg">?</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script type="module">
+       
+        // --- Game Setup and Constants ---
+
+        const CANVAS_WIDTH = 900;
+        const CANVAS_HEIGHT = 600;
+        const TILE_SIZE = 50; 
+
+        // Difficulty Scaling Base Values
+        const MAX_ELIXIR = 10;
+        const BASE_ELIXIR_RATE = 1.6; // Base rate per second
+        const BASE_AI_INTERVAL = 3000; // Base milliseconds between AI deployments (Easy)
+
+        const STARTING_HAND_SIZE = 4;
+        const DEPLOYMENT_LINE_Y = CANVAS_HEIGHT * 0.6; 
+        const PLAYER_ID = 0;
+        const AI_ID = 1;
+        // Visual Constants
+        const COLOR_PLAYER = '#00e5ff'; 
+        const COLOR_AI = '#ff1493';
+        const COLOR_ELIXIR = '#a855f7'; 
+
+        const CARD_DATA = {
+            'KNIGHT': { name: 'Knight', cost: 3, type: 'Unit', hp: 700, dmg: 100, range: 1, speed: 100, target: 'Ground', icon: '🛡️' },
+            'ARCHERS': { name: 'Archers', cost: 4, type: 'Unit', hp: 200, dmg: 60, range: 5, speed: 120, target: 'Air/Ground', count: 2, icon: '🏹' },
+            'GOBLINS': { name: 'Goblins', cost: 2, type: 'Unit', hp: 120, dmg: 40, range: 1, speed: 150, target: 'Ground', count: 3, icon: '🔪' },
+            'GIANT': { name: 'Giant', cost: 5, type: 'Unit', hp: 1500, dmg: 150, range: 1, speed: 80, target: 'Building', icon: '🗿' },
+            'BABY_DRAGON': { name: 'B.Dragon', cost: 4, type: 'Unit', hp: 600, dmg: 80, range: 4, speed: 110, target: 'Air/Ground', flying: true, icon: '🐉' },
+            'FIREBALL': { name: 'Fireball', cost: 4, type: 'Spell', dmg: 400, radius: 100, icon: '🔥' },
+ 
+        };
+
+        const STARTING_DECK = [
+            'KNIGHT', 'ARCHERS', 'GOBLINS', 'GIANT', 'BABY_DRAGON', 'FIREBALL',
+            'KNIGHT', 'ARCHERS', 'GOBLINS', 'GIANT'
+        ];
+        // AI_UNIT_CARDS is no longer needed, AI will use its deck.
+
+        // River/Bridge constants for pathing
+        const BRIDGE_Y = CANVAS_HEIGHT / 2;
+        const RIVER_WIDTH = 80;
+        const BRIDGE_WIDTH = 100;
+        
+
+        // --- Global State ---
+        let gameState = 'MENU';
+        let lastTime = 0;
+        let selectedCardId = null;
+        let canvas, ctx;
+        let gameObjects = [];
+        let unitIdCounter = 0;
+        let animationFrameId = null; // Used to manage the game loop for pause/unpause
+        let originalGameState = 'MENU'; // Stores state before a system-induced pause
+        
+        let currentLevel = 1;
+        let playerState = {};
+        let aiState = {};
+        let aiTimer = 0; 
+        let lastAiDeployLane = 'left';
+        // BUG FIX: Debounce time for preventing double deployment from click/touch
+        let lastDeploymentTime = 0;
+        
+        // --- Utility Functions ---
+        const easeOutQuad = (t) => t * (2 - t);
+        const clamp = (num, min, max) => Math.min(Math.max(num, min), max);
+        const distance = (x1, y1, x2, y2) => Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+        
+        function drawCard(state) {
+            if (!state) return; // Safety check
+            if (state.hand.length >= STARTING_HAND_SIZE) return; // FIX: Prevent hand from exceeding 4 cards
+            
+            if (state.deck.length === 0) {
+                state.deck = state.discard;
+                state.discard = [];
+                shuffle(state.deck);
+            }
+            if (state.deck.length > 0) {
+                const card = state.deck.pop();
+                
+                // --- BUG FIX (AI Logic) ---
+                // Was hard-coded to playerState.hand.push(card)
+                // Now correctly adds to whichever state (Player or AI) was passed in.
+                state.hand.push(card);
+            }
+        }
+
+        // Helper to get click/touch coordinates relative to the canvas
+        function getCanvasCoords(event) {
+            const rect = canvas.getBoundingClientRect();
+            let clientX, clientY;
+
+            // Check for touch events first (Mobile/Phone)
+            if (event.touches && event.touches.length > 0) {
+                clientX = event.touches[0].clientX;
+                clientY = event.touches[0].clientY;
+            } else {
+                // Fallback for mouse events
+                clientX = event.clientX;
+                clientY = event.clientY;
+            }
+
+            // Scale coordinates from screen space to canvas space
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+        
+        // --- Game Reset/Initialization ---
+
+        function setupInitialState() {
+            // Player initial state
+            playerState = {
+                elixir: 5, elixirProgress: 0, hand: [], deck: [], discard: [], crowns: 0,
+                kingTower: { name: 'King', hp: 3000, maxHp: 3000, x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT - 60, radius: 40, isAlive: true, owner: PLAYER_ID },
+                leftTower: { name: 'Left', hp: 1800, maxHp: 1800, x: CANVAS_WIDTH / 4, y: CANVAS_HEIGHT - 120, radius: 30, isAlive: true, owner: PLAYER_ID },
+                rightTower: { name: 'Right', hp: 1800, maxHp: 1800, x: CANVAS_WIDTH * 3 / 4, y: CANVAS_HEIGHT - 120, radius: 30, isAlive: true, owner: PLAYER_ID },
+            };
+            // AI initial state
+            aiState = {
+                elixir: 5, elixirProgress: 0, hand: [], deck: [], discard: [], crowns: 0,
+                kingTower: { name: 'King', hp: 3000, maxHp: 3000, x: CANVAS_WIDTH / 2, y: 60, radius: 40, isAlive: true, owner: AI_ID },
+                leftTower: { name: 'Left', hp: 1800, maxHp: 1800, x: CANVAS_WIDTH / 4, y: 120, radius: 30, isAlive: true, owner: AI_ID },
+                rightTower: { name: 'Right', hp: 1800, maxHp: 1800, x: CANVAS_WIDTH * 3 / 4, y: 120, radius: 30, isAlive: true, owner: AI_ID },
+            };
+        }
+
+        function resetGameState() {
+            // Re-initialize state and towers
+            setupInitialState();
+            // Clear units and spells
+            gameObjects = gameObjects.filter(obj => obj.type === 'PARTICLE');
+            
+            // Re-shuffle and draw hands
+            playerState.deck = [...STARTING_DECK];
+            shuffle(playerState.deck);
+            aiState.deck = [...STARTING_DECK];
+            shuffle(aiState.deck);
+
+            // --- BUG FIX (AI Logic) ---
+            // The original code only drew cards for the player.
+            // This now clears both hands and draws 4 cards for both Player and AI.
+            playerState.hand = [];
+            aiState.hand = [];
+            for (let i = 0; i < STARTING_HAND_SIZE; i++) {
+                drawCard(playerState);
+                drawCard(aiState); // Make the AI draw its starting hand
+            }
+            // --- End Fix ---
+
+            // Reset timers and selection
+            aiTimer = 0;
+            selectedCardId = null;
+            
+            // Update UI displays
+            document.getElementById('current-level-display').textContent = currentLevel;
+            document.getElementById('level-indicator-menu').textContent = `LEVEL ${currentLevel} // ${currentLevel === 1 ? 'EASY' : currentLevel === 2 ? 'NORMAL' : 'HARD'}`;
+        }
+
+
+        // --- Tone.js Audio Setup ---
+        let musicLoop;
+        let deploySynth, hitNoise, elixirSynth, gameOverSynth;
+
+        function initAudio() {
+            // 1. Synth for Elixir Gain (Simple Pluck)
+            elixirSynth = new Tone.PluckSynth().toDestination();
+            // 2. Synth for Unit Deployment (Sharper POP Sound)
+            deploySynth = new Tone.FMSynth({
+                harmonicity: 3.1,
+                modulationIndex: 14,
+                oscillator: { type: "sine" },
+                envelope: {
+                    attack: 0.01,
+                    decay: 0.2,
+                    sustain: 0,
+                    release: 0.05
+                },
+                modulation: {
+                    volume: -10,
+                    type: "square"
+                },
+                modulationEnvelope: {
+                    attack: 0.01,
+                    decay: 0.2,
+                    sustain: 0,
+                    release: 0.05
+                }
+            }).toDestination();
+            deploySynth.volume.value = -10; // Make the pop slightly quieter
+
+            // 3. Noise for Hits/Damage (Short burst)
+            hitNoise = new Tone.NoiseSynth({
+                noise: { type: "white" },
+                envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.1 },
+            }).toDestination();
+            // 4. Game Over/Victory Chords
+            gameOverSynth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "triangle" },
+                envelope: { attack: 0.1, decay: 0.5, sustain: 0.2, release: 1.5 },
+                volume: -10
+            }).toDestination();
+            // 5. Background Music Loop (Ambient Cyber Track)
+            const bassSynth = new Tone.Synth({
+                oscillator: { type: "sine" },
+                envelope: { attack: 0.01, decay: 0.5, sustain: 0.3, release: 1 },
+                volume: -15
+            }).toDestination();
+            const melodyPattern = ["C2", "F2", "G2", "A#2"];
+            let step = 0;
+            musicLoop = new Tone.Loop(time => {
+                bassSynth.triggerAttackRelease(melodyPattern[step % melodyPattern.length], "4n", time);
+                step++;
+            }, "1.5m").start(0);
+            Tone.Transport.start();
+        }
+
+        function playElixirSound() {
+            elixirSynth.triggerAttackRelease("A5", "16n");
+        }
+        
+        function playDeploySound() {
+            // Sharper pop sound on deploy
+            deploySynth.triggerAttackRelease("C5", "16n", Tone.now(), 0.8);
+        }
+        
+        function playHitSound() {
+            hitNoise.triggerAttackRelease("32n");
+        }
+        
+        function playGameOverSound(isVictory) {
+            Tone.Transport.stop();
+            if (musicLoop) musicLoop.dispose();
+            
+            const chords = isVictory ? [["C4", "E4", "G4"], ["G4", "B4", "D5"]] : [["F#3", "D4"], ["C4", "G#3"]];
+            gameOverSynth.triggerAttackRelease(chords[0], "1n", Tone.now());
+            gameOverSynth.triggerAttackRelease(chords[1], "1n", Tone.now() + 0.5);
+        }
+        
+        // --- Object Factory and Effects (Unchanged) ---
+        function createUnit(cardId, x, y, owner) {
+            const data = CARD_DATA[cardId];
+            const isFlying = data.flying || false;
+
+            const baseUnit = {
+                id: unitIdCounter++, cardId, owner, x, y, targetX: x, targetY: y,
+                hp: data.hp, maxHp: data.hp, dmg: data.dmg,
+                range: data.range * TILE_SIZE, speed: data.speed / 1000,
+                targetType: data.target, isFlying, isBuildingTargeter: data.target === 'Building',
+                attackSpeed: 1000, lastAttack: Date.now(), state: 'MOVING', target: null,
+                size: TILE_SIZE * 0.5, attackTween: 0, count: data.count || 1,
+                color: owner === PLAYER_ID ? COLOR_PLAYER : COLOR_AI,
+                icon: data.icon, start_x: x, start_y: y, tween_progress: 0,
+            };
+            gameObjects.push(baseUnit);
+            deployEffect(x, y, baseUnit.color); 
+            if (owner === PLAYER_ID) {
+                playDeploySound();
+            }
+        }
+
+        function createSpell(cardId, x, y, owner) {
+             const data = CARD_DATA[cardId];
+             const spell = {
+                id: unitIdCounter++, cardId, owner, x, y, dmg: data.dmg, radius: data.radius,
+                life: 300, type: 'SPELL_EFFECT', damageApplied: false, color: '#ff7700',
+             };
+             gameObjects.push(spell);
+             if (owner === PLAYER_ID) {
+                playDeploySound();
+             }
+        }
+        
+        function createParticle(x, y, color, size, velocityX, velocityY, life) {
+            gameObjects.push({
+                x, y, color, size, velocityX, velocityY, life, maxLife: life, type: 'PARTICLE'
+            });
+        }
+        
+        function deployEffect(x, y, color) {
+            for (let i = 0; i < 15; i++) {
+                createParticle(x, y, color, Math.random() * 8 + 4, 
+                               (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, 
+                               500 + Math.random() * 300);
+            }
+        }
+
+        function hitEffect(x, y, color) {
+            for (let i = 0; i < 5; i++) {
+                createParticle(x + (Math.random() - 0.5) * 10, y + (Math.random() - 0.5) * 10, 
+                                color, Math.random() * 5 + 2, 
+                               (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, 
+                               200);
+            }
+            playHitSound();
+        }
+        
+        function deathEffect(x, y, color) {
+            for (let i = 0; i < 20; i++) {
+                createParticle(x, y, color, Math.random() * 10 + 5, 
+                               (Math.random() - 0.5) * 200, (Math.random() - 0.5) * 200, 
+                               800 + Math.random() * 500);
+            }
+        }
+
+
+        // --- Core Game Functions (Movement, Combat, AI) ---
+
+        // NEW: Pause/Unpause Logic
+        function pauseGame() {
+            if (gameState !== 'PLAYING') return;
+            originalGameState = gameState;
+            gameState = 'PAUSED';
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            
+            // Stop Tone.js audio to prevent unwanted music drift/sounds
+            Tone.Transport.pause();
+            document.getElementById('pause-overlay').style.display = 'flex';
+        }
+
+        function unpauseGame() {
+            if (gameState !== 'PAUSED') return;
+            gameState = originalGameState;
+            
+            // Resume Tone.js audio
+            if (gameState === 'PLAYING') {
+                 Tone.Transport.start();
+            }
+            
+            document.getElementById('pause-overlay').style.display = 'none';
+            // Resume the game loop
+            if (gameState === 'PLAYING') {
+                lastTime = performance.now();
+                animationFrameId = requestAnimationFrame(gameLoop);
+            }
+        }
+        
+        function gameLoop(currentTime) {
+            if (gameState !== 'PLAYING') {
+                lastTime = currentTime;
+                // Continue drawing static screens if not paused
+                if (gameState === 'MENU' || gameState === 'ENDED') {
+                     animationFrameId = requestAnimationFrame(gameLoop);
+                }
+                return;
+            }
+
+            const deltaTime = currentTime - lastTime;
+            lastTime = currentTime;
+
+            // BUG FIX: Ignore massive delta time if user switches tabs and back 
+            // without the pause system being fully reliable (e.g., system pause fail)
+            if (deltaTime > 500) {
+                 // Ignore frame, treat as if no time passed
+                 animationFrameId = requestAnimationFrame(gameLoop);
+                 return;
+            }
+
+            // Game Logic Execution (Robust against runtime errors in sub-functions)
+            try {
+                updateElixir(deltaTime);
+                updateAI(deltaTime);
+                updateObjects(deltaTime);
+                checkGameOver();
+            } catch (error) {
+                // If an error occurs during update, log it, but still try to draw and continue the loop.
+                console.error("Game update error:", error);
+            }
+
+            try {
+                drawGame();
+                updateUI();
+            } catch (error) {
+                console.error("Game render error:", error);
+                // The freeze could be caused by an infinite loop in rendering or an unrecoverable state.
+                // If draw/updateUI fails repeatedly, the game might freeze.
+                // For now, we rely on the error logging to diagnose, but keep attempting to loop.
+            }
+            
+            // BUG FIX: Ensure requestAnimationFrame is called at the very end of a PLAYING loop
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        function updateElixir(deltaTime) {
+            // ... (rest of updateElixir) ...
+            const updateState = (state) => {
+                const floorBefore = Math.floor(state.elixir);
+                const elixirRate = BASE_ELIXIR_RATE * (state === playerState ? 1 : (1 + (currentLevel - 1) * 0.2));
+                state.elixirProgress += (deltaTime / 1000) * elixirRate;
+                if (state.elixirProgress >= 1) {
+                    state.elixir = clamp(state.elixir + 1, 0, MAX_ELIXIR);
+                    state.elixirProgress -= 1;
+                }
+                const floorAfter = Math.floor(state.elixir);
+                if (state === playerState && floorAfter > floorBefore) {
+                    playElixirSound();
+                }
+            };
+            updateState(playerState);
+            updateState(aiState);
+        }
+
+        function updateAI(deltaTime) {
+            aiTimer += deltaTime;
+            // Deployment interval decreases by 10% per level (e.g., L1: 3000ms, L2: 2700ms, L3: 2430ms)
+            const levelMultiplier = 0.9 ** (currentLevel - 1);
+            const deployInterval = BASE_AI_INTERVAL * levelMultiplier;
+            
+            if (aiTimer > deployInterval) {
+                aiTimer = 0;
+
+                // --- BUG FIX (AI Logic) ---
+                // AI now picks from its actual hand, not a static "cheat" list.
+                // It will only play Units (spells are too complex for this AI)
+                const affordableCards = aiState.hand
+                    .filter(cardId => CARD_DATA[cardId] && CARD_DATA[cardId].type === 'Unit' && CARD_DATA[cardId].cost <= aiState.elixir)
+                    .sort((a, b) => CARD_DATA[b].cost - CARD_DATA[a].cost);
+                
+                if (affordableCards.length === 0) return;
+
+                const cardId = affordableCards[Math.floor(Math.random() * affordableCards.length)];
+                // --- End Fix ---
+
+                const cardData = CARD_DATA[cardId];
+                if (!cardData) return; // Safety check
+                
+                let deployX;
+                // Simple AI logic: alternate lanes unless a tower is dead
+                if (lastAiDeployLane === 'left' && aiState.rightTower.isAlive) {
+                    deployX = CANVAS_WIDTH * 3 / 4;
+                    lastAiDeployLane = 'right';
+                } else if (aiState.leftTower.isAlive) {
+                    deployX = CANVAS_WIDTH / 4;
+                    lastAiDeployLane = 'left';
+                } else {
+                    deployX = CANVAS_WIDTH / 2;
+                }
+                const deployY = TILE_SIZE + Math.random() * (DEPLOYMENT_LINE_Y - TILE_SIZE * 2);
+                
+                // FIX: Force to spawn only 1 unit per card for AI as well
+                const count = 1; // The original was: const count = cardData.count || 1;
+                for(let i=0; i<count; i++) {
+                    const offsetX = (Math.random() - 0.5) * 40;
+                    const offsetY = (Math.random() - 0.5) * 40; 
+                    createUnit(cardId, deployX + offsetX, deployY + offsetY, AI_ID);
+                }
+
+                aiState.elixir -= cardData.cost;
+
+                // --- BUG FIX (AI Logic) ---
+                // AI must discard its card and draw a new one, just like the player.
+                const cardIndex = aiState.hand.indexOf(cardId);
+                if (cardIndex > -1) {
+                    aiState.hand.splice(cardIndex, 1);
+                    aiState.discard.push(cardId);
+                    drawCard(aiState); // Draw the replacement card
+                }
+                // --- End Fix ---
+            }
+        }
+
+        function updateObjects(deltaTime) {
+            const allTowers = [
+                playerState.kingTower, playerState.leftTower, playerState.rightTower,
+                aiState.kingTower, aiState.leftTower, aiState.rightTower
+            ].filter(t => t.isAlive);
+            const enemyState = (owner) => owner === PLAYER_ID ? aiState : playerState;
+            
+            // Update Units
+            gameObjects.filter(obj => obj.cardId).forEach(unit => {
+                // Find Target
+                if (!unit.target || unit.target.hp <= 0) {
+                    unit.target = findTarget(unit, allTowers);
+                    unit.state = 'MOVING';
+                }
+
+                if (unit.target) {
+                    const finalTarget = unit.target;
+                    let targetX = finalTarget.x;
+                    let targetY = finalTarget.y;
+
+                    // Pathing Logic (Bridge)
+                    const isPlayer = unit.owner === PLAYER_ID;
+                    const isBehindMidline = isPlayer ?
+                        (unit.y > BRIDGE_Y + TILE_SIZE) : (unit.y < BRIDGE_Y - TILE_SIZE);
+                    const targetIsOnEnemySide = isPlayer ?
+                        (finalTarget.y < BRIDGE_Y) : (finalTarget.y > BRIDGE_Y);
+
+                    if (isBehindMidline && targetIsOnEnemySide) {
+                        const leftBridgeX = CANVAS_WIDTH / 4;
+                        const rightBridgeX = CANVAS_WIDTH * 3 / 4;
+
+                        // Find closest bridge to cross
+                        const targetBridgeX = distance(unit.x, 0, leftBridgeX, 0) < distance(unit.x, 0, rightBridgeX, 0) ?
+                            leftBridgeX : rightBridgeX;
+                        
+                        const bridgeYOffset = isPlayer ? -RIVER_WIDTH/2 : RIVER_WIDTH/2;
+                        targetX = targetBridgeX;
+                        targetY = BRIDGE_Y + bridgeYOffset;
+                    }
+
+
+                    if (unit.target && distance(unit.x, unit.y, unit.target.x, unit.target.y) <= unit.range) {
+                        unit.state = 'ATTACKING';
+                    } else {
+                        unit.state = 'MOVING';
+                        unit.targetX = targetX;
+                        unit.targetY = targetY;
+                        unit.start_x = unit.x;
+                        unit.start_y = unit.y;
+                        unit.tween_progress = 0;
+                    }
+                } 
+                
+                if (unit.state === 'MOVING') {
+                    const distTotal = distance(unit.start_x, unit.start_y, unit.targetX, unit.targetY);
+                    if (distTotal > 0) {
+                        const distToCover = unit.speed * deltaTime;
+                        unit.tween_progress += distToCover / distTotal;
+                        unit.tween_progress = clamp(unit.tween_progress, 0, 1);
+                        const progress = unit.tween_progress;
+                        // No easing for basic movement
+
+                        const dx = unit.targetX - unit.start_x;
+                        const dy = unit.targetY - unit.start_y;
+                        unit.x = unit.start_x + dx * progress;
+                        unit.y = unit.start_y + dy * progress;
+                    }
+                    if (distance(unit.x, unit.y, unit.targetX, unit.targetY) < 5 || unit.tween_progress >= 1) {
+                        unit.x = unit.targetX;
+                        unit.y = unit.targetY;
+                        unit.start_x = unit.x;
+                        unit.start_y = unit.y;
+                        unit.tween_progress = 0;
+                        unit.state = 'IDLE'; // Reached destination, wait for target
+                    }
+                } else if (unit.state === 'ATTACKING' && unit.target) {
+                    const now = Date.now();
+                    const attackInterval = (CARD_DATA[unit.cardId] ? CARD_DATA[unit.cardId].attackSpeed : 1000) || 1000;
+                    unit.attackTween = 1; // Start attack animation tween
+
+                    if (now - unit.lastAttack > attackInterval) {
+                        // Apply damage
+                        if (unit.target.isAlive !== undefined) {
+                            // Tower damage
+                            unit.target.hp -= unit.dmg;
+                            checkTowerHealth(unit.target, enemyState(unit.owner));
+                        } else if (unit.target.hp > 0) {
+                            // Unit damage
+                            unit.target.hp -= unit.dmg;
+                        }
+
+                        hitEffect(unit.target.x, unit.target.y, unit.target.owner === PLAYER_ID ? COLOR_PLAYER : COLOR_AI);
+                        unit.lastAttack = now;
+                    }
+                }
+
+                // Decay attack tween for visual feedback
+                unit.attackTween = Math.max(0, unit.attackTween - (deltaTime / 200));
+            });
+
+            // Update Spells (Fireball)
+            gameObjects.filter(obj => obj.type === 'SPELL_EFFECT').forEach(spell => {
+                spell.life -= deltaTime;
+                if (!spell.damageApplied && spell.life <= 200) { // Damage applies mid-life
+                    // Find targets in radius
+                    const targets = gameObjects.filter(obj => obj.cardId && obj.owner !== spell.owner && obj.hp > 0 && distance(spell.x, spell.y, obj.x, obj.y) <= spell.radius);
+                    const towers = allTowers.filter(t => t.owner !== spell.owner && distance(spell.x, spell.y, t.x, t.y) <= spell.radius);
+
+                    [...targets, ...towers].forEach(target => {
+                        if (target.isAlive !== undefined) { // Tower
+                            target.hp -= spell.dmg;
+                            checkTowerHealth(target, enemyState(spell.owner));
+                        } else { // Unit
+                            target.hp -= spell.dmg;
+                         }
+                         hitEffect(target.x, target.y, spell.color);
+                    });
+
+                    spell.damageApplied = true;
+                }
+            });
+
+            // Update Particles
+            gameObjects.filter(obj => obj.type === 'PARTICLE').forEach(p => {
+                p.life -= deltaTime;
+                p.x += p.velocityX * (deltaTime / 1000);
+                p.y += p.velocityY * (deltaTime / 1000);
+                p.size = clamp(p.size - (deltaTime / 100) * 0.5, 1, 100);
+            });
+
+            // Cleanup dead units, expired spells, and particles
+            const deadUnits = gameObjects.filter(obj => obj.cardId && obj.hp <= 0);
+            
+            deadUnits.forEach(unit => {
+                deathEffect(unit.x, unit.y, unit.color);
+                
+                // Return unit card to discard pile (Player or AI)
+                const state = unit.owner === PLAYER_ID ? playerState : aiState;
+                state.discard.push(unit.cardId);
+            });
+
+            gameObjects = gameObjects.filter(obj => 
+                (obj.cardId && obj.hp > 0) || 
+                (obj.type === 'SPELL_EFFECT' && obj.life > 0) ||
+                (obj.type === 'PARTICLE' && obj.life > 0)
+            );
+        }
+
+        function checkTowerHealth(tower, enemyStateRef) {
+            if (tower.hp <= 0 && tower.isAlive) {
+                tower.isAlive = false;
+                // Award crown to the enemy
+                if (tower.name === 'King') {
+                    // King tower death instantly grants 3 crowns
+                    enemyStateRef.crowns = 3;
+                } else {
+                    enemyStateRef.crowns = clamp(enemyStateRef.crowns + 1, 0, 3);
+                }
+            }
+        }
+
+        function findTarget(unit, allTowers) {
+            // Priority: Closest enemy unit -> Closest enemy building/tower
+            const enemyId = unit.owner === PLAYER_ID ? AI_ID : PLAYER_ID;
+            let potentialTargets = [];
+
+            // Add Towers first
+            allTowers.forEach(tower => {
+                if (tower.owner === enemyId && tower.isAlive) {
+                    potentialTargets.push(tower);
+                }
+            });
+            // Add Units
+            gameObjects.forEach(other => {
+                if (other.owner === enemyId && other.cardId && other.hp > 0) {
+                    const data = CARD_DATA[unit.cardId];
+                    if (!data) return; // Safety check
+                    const canTargetAir = data.target === 'Air/Ground';
+          
+                    // Check if unit can hit the target (air/ground)
+                    if (unit.isFlying || canTargetAir || !other.isFlying) {
+                        potentialTargets.push(other);
+                    }
+            
+                }
+            });
+            
+            if (potentialTargets.length === 0) return null;
+
+            // Filter for building-only targeters
+            potentialTargets = potentialTargets.filter(target => {
+                const isBuilding = target.isAlive !== undefined; // Towers are buildings
+                // Units that only target buildings ignore other units
+                if (unit.isBuildingTargeter && !isBuilding) {
+                    return false;
+                }
+                return true;
+            });
+            
+            if (potentialTargets.length === 0) return null;
+
+            // Sort by closest distance
+            potentialTargets.sort((a, b) => {
+                const distA = distance(unit.x, unit.y, a.x, a.y);
+                const distB = distance(unit.x, unit.y, b.x, b.b);
+                return distA - distB;
+            });
+
+            return potentialTargets[0];
+        }
+
+        function checkGameOver() {
+            // Check for King Tower death first, as it's an instant win
+            if (!playerState.kingTower.isAlive) {
+                endGame('DEFEAT', false);
+                return;
+            }
+            if (!aiState.kingTower.isAlive) {
+                endGame('LEVEL CLEARED!', true);
+                return;
+            }
+
+            // Original check for all towers (can be removed if only King matters, but leaving for now)
+            const aiTowers = [aiState.kingTower, aiState.leftTower, aiState.rightTower];
+            const playerTowers = [playerState.kingTower, playerState.leftTower, playerState.rightTower];
+            const aiTowersAlive = aiTowers.filter(t => t.isAlive).length;
+            const playerTowersAlive = playerTowers.filter(t => t.isAlive).length;
+            
+            if (aiTowersAlive === 0) {
+                endGame('LEVEL CLEARED!', true);
+            } else if (playerTowersAlive === 0) {
+                endGame('DEFEAT', false);
+            }
+        }
+
+        function endGame(result, isLevelComplete) {
+            if (gameState === 'ENDED') return;
+            gameState = 'ENDED';
+            playGameOverSound(isLevelComplete);
+
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+
+            const titleElement = document.getElementById('message-title');
+            const overlay = document.getElementById('message-overlay');
+            const actionButton = document.getElementById('level-action-button');
+            const messageBox = overlay.querySelector('.message-box');
+
+            titleElement.textContent = result;
+            messageBox.style.borderColor = isLevelComplete ? COLOR_PLAYER : COLOR_AI;
+            messageBox.style.boxShadow = isLevelComplete ? `0 0 80px ${COLOR_PLAYER}` : `0 0 80px ${COLOR_AI}`;
+            
+            if (isLevelComplete) {
+                actionButton.textContent = "PROCEED TO NEXT LEVEL";
+                actionButton.onclick = () => restartGame(true);
+                actionButton.classList.remove('from-red-600', 'to-pink-600');
+                actionButton.classList.add('from-green-600', 'to-teal-600');
+            } else {
+                // --- BUG FIX ---
+                // Original code always said "RETRY LEVEL 1"
+                // This now correctly tells the user to retry the *current* level.
+                actionButton.textContent = `RETRY LEVEL ${currentLevel}`;
+                actionButton.onclick = () => restartGame(false); // Pass false to not level up
+                actionButton.classList.remove('from-green-600', 'to-teal-600');
+                actionButton.classList.add('from-red-600', 'to-pink-600');
+            }
+
+            overlay.classList.remove('hidden');
+        }
+
+        function restartGame(isLevelUp) {
+            if (isLevelUp) {
+                currentLevel++;
+            }
+            document.getElementById('message-overlay').classList.add('hidden');
+            gameState = 'PLAYING';
+            resetGameState(); // Now handles L1 setup
+            // Restart the game loop if it was stopped
+            if (!animationFrameId) { 
+                lastTime = performance.now();
+                animationFrameId = requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // --- Rendering (Advanced Drawing) --- 
+        function drawGame() { 
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            drawArena(); 
+            drawTowers(aiState); 
+            drawTowers(playerState);
+            gameObjects.forEach(obj => { 
+                if (obj.cardId) { 
+                    drawUnit(obj); 
+                } else if (obj.type === 'SPELL_EFFECT') { 
+                    drawSpell(obj); 
+                } else if (obj.type === 'PARTICLE') { 
+                    drawParticle(obj); 
+                } 
+            });
+            if (selectedCardId && lastMouseMove) { 
+                drawDeploymentIndicator(lastMouseMove.x, lastMouseMove.y);
+            } 
+            // Draw Deployment Line 
+            ctx.shadowColor = 'rgba(255, 100, 200, 0.8)';
+            ctx.shadowBlur = 15; 
+            ctx.strokeStyle = '#ff69b4'; 
+            ctx.lineWidth = 4; 
+            ctx.setLineDash([20, 10]); 
+            ctx.beginPath(); 
+            ctx.moveTo(0, DEPLOYMENT_LINE_Y); 
+            ctx.lineTo(CANVAS_WIDTH, DEPLOYMENT_LINE_Y); 
+            ctx.stroke(); 
+            ctx.setLineDash([]);
+            ctx.shadowBlur = 0; 
+            drawCrowns(); 
+        }
+
+        function drawArena() { 
+            const riverY = BRIDGE_Y - RIVER_WIDTH / 2;
+            const glowPulse = Math.sin(Date.now() / 200) * 0.5 + 0.5;
+            ctx.fillStyle = `rgba(77, 208, 225, ${0.4 + glowPulse * 0.2})`;
+            ctx.fillRect(0, riverY, CANVAS_WIDTH, RIVER_WIDTH); 
+            ctx.shadowColor = '#4dd0e1'; 
+            ctx.shadowBlur = 30; 
+            ctx.strokeStyle = '#4dd0e1'; 
+            ctx.lineWidth = 8; 
+            ctx.strokeRect(0, riverY, CANVAS_WIDTH, RIVER_WIDTH);
+            ctx.shadowBlur = 0; 
+            const stoneColor = '#374151'; 
+            const stoneBorder = '#555e6d';
+            // Left Bridge
+            ctx.fillStyle = stoneColor;
+            ctx.strokeStyle = stoneBorder;
+            ctx.lineWidth = 4;
+            ctx.fillRect(CANVAS_WIDTH / 4 - BRIDGE_WIDTH / 2, riverY, BRIDGE_WIDTH, RIVER_WIDTH);
+            ctx.strokeRect(CANVAS_WIDTH / 4 - BRIDGE_WIDTH / 2, riverY, BRIDGE_WIDTH, RIVER_WIDTH);
+            // Right Bridge
+            ctx.fillRect(CANVAS_WIDTH * 3 / 4 - BRIDGE_WIDTH / 2, riverY, BRIDGE_WIDTH, RIVER_WIDTH);
+            ctx.strokeRect(CANVAS_WIDTH * 3 / 4 - BRIDGE_WIDTH / 2, riverY, BRIDGE_WIDTH, RIVER_WIDTH);
+            // Draw Center Line (Mid-field dividing line)
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([10, 10]);
+            ctx.beginPath();
+            ctx.moveTo(0, CANVAS_HEIGHT / 2);
+            ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT / 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        function drawTowers(state) {
+            const towers = [state.kingTower, state.leftTower, state.rightTower].filter(t => t.isAlive);
+            towers.forEach(tower => {
+                ctx.save();
+                ctx.translate(tower.x, tower.y);
+                const color = tower.owner === PLAYER_ID ? COLOR_PLAYER : COLOR_AI;
+
+                // Base (Cyber Slab)
+                ctx.fillStyle = '#4b5563';
+                ctx.fillRect(-tower.radius, -tower.radius, tower.radius * 2, tower.radius * 2);
+                
+                // Main Body (Slick, Dark Monolith)
+                ctx.fillStyle = '#1f2937';
+                ctx.fillRect(-tower.radius * 0.8, -tower.radius * 2, tower.radius * 1.6, tower.radius * 2);
+                
+                // Roof (Sharp, contrasting)
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.moveTo(-tower.radius * 0.8, -tower.radius * 2);
+                ctx.lineTo(tower.radius * 0.8, -tower.radius * 2);
+                ctx.lineTo(0, -tower.radius * 3);
+                ctx.closePath();
+                ctx.fill();
+
+                // --- ENHANCED VISIBILITY: TOWER NAME ---
+                const nameYOffset = -tower.radius * 4.5;
+                ctx.font = '16px "Orbitron"';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 15;
+                ctx.fillText(tower.name.toUpperCase(), 0, nameYOffset);
+                ctx.shadowBlur = 0;
+                // Tower Crest (Cyber Icon)
+                ctx.font = '28px "Orbitron"';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(tower.name === 'King' ? '👑' : 'CORE', 0, -tower.radius * 2.5);
+                // --- ENHANCED VISIBILITY: HP BAR ---
+                const hpPercent = tower.hp / tower.maxHp;
+                const barWidth = tower.radius * 3.5; // Wider bar
+                const barHeight = 12; // Taller bar
+                const barY = -tower.radius * 3.8;
+                ctx.fillStyle = '#111827';
+                ctx.fillRect(-barWidth / 2, barY, barWidth, barHeight);
+
+                const hpColor = hpPercent > 0.5 ? '#22c55e' : hpPercent > 0.2 ? '#fcd34d' : '#dc2626';
+                ctx.fillStyle = hpColor;
+                ctx.shadowColor = hpColor;
+                ctx.shadowBlur = 10;
+                ctx.fillRect(-barWidth / 2, barY, barWidth * hpPercent, barHeight);
+                ctx.shadowBlur = 0;
+                // Tower HP Text (More visible)
+                ctx.font = '12px "Orbitron"';
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'center';
+                ctx.fillText(tower.hp.toFixed(0), 0, barY + barHeight / 2 + 3);
+
+                ctx.restore();
+            });
+        }
+
+        function drawUnit(unit) {
+            const isAttacking = unit.state === 'ATTACKING';
+            const unitRadius = unit.size;
+            const unitColor = unit.color;
+
+            ctx.save();
+            ctx.translate(unit.x, unit.y);
+            // Shadow/Glow (Pulse slightly when attacking)
+            ctx.shadowColor = unitColor;
+            ctx.shadowBlur = 10 + (isAttacking ? 10 * unit.attackTween : 0);
+            ctx.fillStyle = unitColor;
+            // Unit base (circle)
+            ctx.beginPath();
+            ctx.arc(0, 0, unitRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.shadowBlur = 0; // Turn off shadow for the rest of the drawing
+
+            // Unit Icon (Cyber Sigil)
+            ctx.font = `${unitRadius * 1.5}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(unit.icon, 0, 0);
+            // HP Bar
+            const hpPercent = unit.hp / unit.maxHp;
+            const barWidth = unitRadius * 3;
+            const barHeight = 4;
+            const barY = -unitRadius - 10;
+            ctx.fillStyle = '#4b5563';
+            ctx.fillRect(-barWidth / 2, barY, barWidth, barHeight);
+
+            const hpColor = hpPercent > 0.5 ? '#22c55e' : hpPercent > 0.2 ? '#fcd34d' : '#dc2626';
+            ctx.fillStyle = hpColor;
+            ctx.fillRect(-barWidth / 2, barY, barWidth * hpPercent, barHeight);
+
+            ctx.restore();
+        }
+
+        function drawSpell(spell) {
+            ctx.save();
+            ctx.translate(spell.x, spell.y);
+            const maxRadius = spell.radius;
+            const lifeRatio = spell.life / 300;
+            const opacity = clamp(lifeRatio * 2, 0.1, 0.7);
+            // Draw fire circle (Radial Gradient)
+            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, maxRadius);
+            gradient.addColorStop(0, `rgba(255, 255, 0, ${opacity})`);
+            gradient.addColorStop(0.5, `rgba(255, 100, 0, ${opacity * 0.8})`);
+            gradient.addColorStop(1, `rgba(255, 50, 0, 0)`);
+            ctx.fillStyle = gradient;
+            // Pulsating glow effect
+            ctx.shadowColor = 'red';
+            ctx.shadowBlur = 25;
+            ctx.beginPath();
+            ctx.arc(0, 0, maxRadius, 0, Math.PI * 2);
+            ctx.fill();
+            // White hot center
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 1.5})`;
+            ctx.beginPath();
+            ctx.arc(0, 0, maxRadius * 0.1, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawParticle(p) {
+            ctx.save();
+            ctx.globalAlpha = p.life / p.maxLife;
+
+            // Particles fade and shrink, using a circular gradient for a softer glow
+            const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+            gradient.addColorStop(0, p.color);
+            gradient.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawDeploymentIndicator(x, y) {
+            const isPlayerSide = y > DEPLOYMENT_LINE_Y;
+            const indicatorColor = isPlayerSide ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)';
+
+            ctx.save();
+            ctx.fillStyle = indicatorColor;
+            ctx.beginPath();
+            ctx.arc(x, y, TILE_SIZE * 0.8, 0, Math.PI * 2);
+            ctx.fill();
+            
+            if (selectedCardId) {
+                const data = CARD_DATA[selectedCardId];
+                if (!data) return; // Safety check
+                
+                // Draw Card Icon in center
+                ctx.font = '30px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(data.icon, x, y + 2);
+                // Draw Range Indicator
+                if (data.range > 1) {
+                    ctx.strokeStyle = indicatorColor.replace('0.5', '0.8');
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(x, y, data.range * TILE_SIZE, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+            }
+
+            ctx.restore();
+        }
+
+        function drawCrowns() {
+            // Draw Player Crowns
+            for (let i = 0; i < 3; i++) {
+                const x = CANVAS_WIDTH / 2 - 80 + i * 80;
+                const y = CANVAS_HEIGHT - 30;
+                ctx.font = '24px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = i < playerState.crowns ? COLOR_PLAYER : '#4b5563';
+                ctx.fillText('★', x, y);
+            }
+
+            // Draw AI Crowns
+            for (let i = 0; i < 3; i++) {
+                const x = CANVAS_WIDTH / 2 - 80 + i * 80;
+                const y = 30;
+                ctx.font = '24px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = i < aiState.crowns ? COLOR_AI : '#4b5563';
+                ctx.fillText('★', x, y);
+            }
+        }
+
+
+        // --- UI & Event Handlers ---
+        let lastMouseMove = null; // Stores last mouse position for deployment indicator
+
+        function updateUI() {
+            document.getElementById('player-score').textContent = playerState.crowns;
+            document.getElementById('ai-score').textContent = aiState.crowns;
+
+            const elixirBar = document.getElementById('elixir-bar');
+            const elixirCount = document.getElementById('elixir-count');
+            elixirBar.style.width = `${(playerState.elixir + playerState.elixirProgress) / MAX_ELIXIR * 100}%`;
+            elixirCount.textContent = `${Math.floor(playerState.elixir)}/${MAX_ELIXIR}`;
+            document.getElementById('current-level-display').textContent = currentLevel;
+
+            const handContainer = document.getElementById('hand-container');
+            
+            // Re-render only if the hand size changes, otherwise update existing elements
+            if (handContainer.children.length !== playerState.hand.length) {
+                renderHandUI();
+            } else {
+                // Quick update of existing slots (cost, selection, availability)
+                Array.from(handContainer.children).forEach((slot, index) => {
+                    const cardId = playerState.hand[index];
+                    const cardData = CARD_DATA[cardId];
+                    
+                    // --- BUG FIX (Crash Protection) ---
+                    // Added a check to prevent a crash if the hand contains a bad card ID.
+                    if (!cardData) return; 
+                    // --- End Fix ---
+         
+                    const isAffordable = playerState.elixir >= cardData.cost;
+
+                    if (cardId === selectedCardId) {
+                        slot.classList.add('selected');
+                    } else {
+                        slot.classList.remove('selected');
+                    }
+
+                    if (isAffordable) {
+                        slot.classList.remove('unavailable');
+                    } else {
+                        slot.classList.add('unavailable');
+                    }
+                });
+            }
+
+            const nextCardSlot = document.getElementById('next-card');
+            const nextCardIcon = nextCardSlot.querySelector('.card-icon');
+            const nextCardCost = nextCardSlot.querySelector('.card-cost');
+            const nextCardId = playerState.deck[playerState.deck.length - 1];
+            
+            // --- BUG FIX (Crash Protection) ---
+            // Added 'CARD_DATA[nextCardId]' check to prevent a crash if the deck contains a bad ID.
+            if (nextCardId && CARD_DATA[nextCardId]) {
+                const nextData = CARD_DATA[nextCardId];
+                nextCardIcon.textContent = nextData.icon;
+                nextCardCost.textContent = nextData.cost;
+                nextCardSlot.classList.remove('opacity-70', 'bg-gray-600');
+                nextCardSlot.classList.add('bg-gray-700');
+            } else {
+                nextCardIcon.textContent = '🔄';
+                nextCardCost.textContent = 'Deck';
+                nextCardSlot.classList.add('opacity-70', 'bg-gray-600');
+                nextCardSlot.classList.remove('bg-gray-700');
+            }
+        }
+
+        function renderHandUI() {
+            const handContainer = document.getElementById('hand-container');
+            handContainer.innerHTML = '';
+
+            playerState.hand.forEach((cardId, index) => {
+                const data = CARD_DATA[cardId];
+                
+                // --- BUG FIX (Crash Protection) ---
+                // Added a check to prevent a crash if the hand contains a bad card ID.
+                if (!data) {
+                    console.error(`Invalid cardId in hand: ${cardId}`);
+                    return; // Skip rendering this card
+                }
+                // --- End Fix ---
+
+                const cardSlot = document.createElement('div');
+                cardSlot.className = 'card-slot flex flex-col items-center justify-center';
+                cardSlot.dataset.cardId = cardId;
+                cardSlot.dataset.index = index;
+
+                // 1. Stat Block
+                const statsDiv = document.createElement('div');
+                statsDiv.className = 'card-stats';
+                if (data.type === 'Unit') {
+                    // NOTE: Displaying original unit stats here, but only one unit will spawn.
+                    statsDiv.innerHTML = `
+                        <div class="stat-item stat-hp"><span>HP:</span><span>${data.hp}</span></div>
+                        <div class="stat-item stat-dmg"><span>DMG:</span><span>${data.dmg}</span></div>
+                        <div class="stat-item stat-rng"><span>RNG:</span><span>${data.range}</span></div>
+                    `;
+                }
+                cardSlot.appendChild(statsDiv);
+                
+                // 2. Card Icon
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'card-icon';
+                iconSpan.textContent = data.icon;
+                cardSlot.appendChild(iconSpan);
+
+                // 3. Cost Tag
+                const costSpan = document.createElement('span');
+                costSpan.className = 'card-cost';
+                costSpan.textContent = data.cost;
+                cardSlot.appendChild(costSpan);
+                
+                handContainer.appendChild(cardSlot);
+            });
+        }
+
+
+        // Universal handler for canvas interactions (mouse click/touch tap)
+        function handleCanvasInteraction(event) {
+            if (gameState !== 'PLAYING' && gameState !== 'PAUSED') return;
+            
+            const { x, y } = getCanvasCoords(event);
+            lastMouseMove = { x, y };
+            
+            // Only attempt deploy/select logic on click/tap events
+            if (event.type === 'click' || event.type === 'touchstart') {
+                if (gameState === 'PAUSED') return; // Cannot deploy while paused
+
+                // BUG FIX: Double-fire debounce for mobile/desktop
+                const now = Date.now();
+                if (now - lastDeploymentTime < 350) {
+                    // Ignore the event if it fires too soon after the last one (prevents double spawn)
+                    return;
+                }
+                lastDeploymentTime = now;
+                // END BUG FIX
+
+                if (!selectedCardId) return;
+                
+                const data = CARD_DATA[selectedCardId];
+
+                // --- BUG FIX (Crash Protection) ---
+                // Added a check to ensure the card data is valid before using it.
+                if (!data) {
+                    console.error(`Invalid selectedCardId: ${selectedCardId}`);
+                    selectedCardId = null;
+                    return;
+                }
+                // --- End Fix ---
+
+                // 1. Check Deployment Zone: Player can only deploy units below the deployment line
+                if (y < DEPLOYMENT_LINE_Y && data.type === 'Unit') {
+                    showFeedback("INVALID DEPLOYMENT ZONE");
+                    return;
+                }
+
+                // 2. Check Elixir Cost
+                if (playerState.elixir >= data.cost) {
+                    
+                    // --- BUG FIX (Infinite Spawn / Race Condition) ---
+                    // This check confirms the card is *actually* in the hand's data
+                    // before allowing deployment. This stops the "fast tap" bug.
+                    const cardIndex = playerState.hand.indexOf(selectedCardId);
+                    if (cardIndex === -1) {
+                        // Card is not in hand. This was a "ghost" selection.
+                        selectedCardId = null; // Clear the invalid selection
+                        updateUI(); // Fix the UI
+                        return; // Stop the deployment
+                    }
+                    // --- End Fix ---
+                    
+                    // 3. Perform Deployment
+                    if (data.type === 'Unit') {
+                        // FIX: Force to spawn only 1 unit per card
+                        const count = 1; // The original was: const count = data.count || 1;
+                        for(let i=0; i<count; i++) {
+                            // Slight random offset for units that spawn multiple (e.g., Archers, Goblins)
+                            const offsetX = (Math.random() - 0.5) * 40;
+                            const offsetY = (Math.random() - 0.5) * 40; 
+                            createUnit(selectedCardId, x + offsetX, y + offsetY, PLAYER_ID);
+                        }
+                    } else if (data.type === 'Spell') {
+                        createSpell(selectedCardId, x, y, PLAYER_ID);
+                    }
+
+                    // 4. Update State
+                    playerState.elixir -= data.cost;
+                    // Move card from hand to discard and draw a new one
+                    playerState.hand.splice(cardIndex, 1);
+                    playerState.discard.push(selectedCardId);
+                    
+                    // --- CARD REPLACEMENT FIX ---
+                    // Ensures the card is used once and replaced immediately.
+                    drawCard(playerState); 
+
+                    // Deselect card and update UI
+                    selectedCardId = null;
+                    renderHandUI(); // Re-render to be safe
+                    updateUI();
+                } else {
+                    showFeedback("INSUFFICIENT ELIXIR");
+                }
+            }
+        }
+
+        function showFeedback(message) {
+            const feedback = document.getElementById('feedback-message');
+            feedback.textContent = message;
+            feedback.classList.remove('hidden');
+            feedback.style.opacity = '1';
+            
+            clearTimeout(feedback.timer);
+            feedback.timer = setTimeout(() => {
+                feedback.style.opacity = '0';
+                setTimeout(() => feedback.classList.add('hidden'), 300);
+            }, 1000);
+        }
+
+        // --- Initialization ---
+
+        window.onload = () => {
+            canvas = document.getElementById('game-canvas');
+            ctx = canvas.getContext('2d');
+            
+            // Set fixed canvas dimensions (rendering scale is handled by CSS/getCanvasCoords)
+            canvas.width = CANVAS_WIDTH;
+            canvas.height = CANVAS_HEIGHT;
+
+            document.getElementById('start-button').addEventListener('click', startGame);
+            document.getElementById('unpause-button').addEventListener('click', unpauseGame); // New Unpause listener
+
+            // Use event delegation for hand selection (better for mobile and dynamic elements)
+            document.getElementById('hand-container').addEventListener('click', (e) => {
+                const slot = e.target.closest('.card-slot');
+                if (slot && slot.dataset.cardId && gameState === 'PLAYING') {
+                    const cardId = slot.dataset.cardId;
+                    
+                    // --- BUG FIX (Crash Protection) ---
+                    // Ensure the card exists before trying to select it.
+                    if (!CARD_DATA[cardId]) {
+                        console.error(`Clicked on invalid cardId: ${cardId}`);
+                        return;
+                    }
+                    // --- End Fix ---
+
+                    selectedCardId = selectedCardId === cardId ? null : cardId;
+                    updateUI(); // Force UI update to show selection change
+                }
+            });
+            
+            // DEPLOYMENT LISTENERS: The original code had redundant 'click' and 'touchstart' which caused double deployment.
+            // We now rely on the 'click' event for desktop and 'touchstart' for mobile, but the 'handleCanvasInteraction'
+            // function now uses a debounce timer (lastDeploymentTime) to prevent double firing.
+            canvas.addEventListener('click', handleCanvasInteraction);
+            canvas.addEventListener('mousemove', (e) => {
+                if (gameState === 'PLAYING') lastMouseMove = getCanvasCoords(e);
+            });
+            
+            // Handle touch for mobile responsiveness
+            canvas.addEventListener('touchstart', (e) => {
+                 e.preventDefault(); 
+                 handleCanvasInteraction(e);
+            }, {passive: false});
+            
+            canvas.addEventListener('touchmove', (e) => {
+                if (gameState === 'PLAYING') lastMouseMove = getCanvasCoords(e);
+            });
+            
+            canvas.addEventListener('touchend', () => {
+                lastMouseMove = null; 
+            });
+            
+            // NEW: Pause/Unpause Listeners for off-tab/off-game
+            function handleVisibilityChange() {
+                if (document.hidden) {
+                    pauseGame();
+                } else {
+                    // When visible, only unpause via button, but make sure time is ready if not paused
+                    if (gameState === 'PLAYING') {
+                         lastTime = performance.now();
+                    }
+                }
+            }
+            window.addEventListener('blur', pauseGame); // Fallback for focus loss
+            document.addEventListener('visibilitychange', handleVisibilityChange); 
+
+
+            setupInitialState();
+            drawGame();
+        };
+
+        async function startGame() {
+            // Initialize audio context which requires a user gesture
+            await Tone.start();
+            initAudio(); 
+
+            document.getElementById('main-menu').classList.add('hidden');
+            gameState = 'PLAYING';
+            resetGameState(); // Now handles L1 setup
+            lastTime = performance.now(); // Resetting for smooth start
+            animationFrameId = requestAnimationFrame(gameLoop); // Start the loop and store ID
+        }
+    </script>
+</body>
+</html>
